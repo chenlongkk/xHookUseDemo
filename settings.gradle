@@ -1,2 +1,3 @@
-rootProject.name = "xHookUse"
+rootProject.name = "IOMonitor"
 include ':app'
+include ':IOMonitorLib'
