@@ -47,11 +47,12 @@ int hook_open(const char *path, int flags, mode_t mode) {
     JavaContext java_context = JavaContext(stack, thread_name, (long)j_thread_id);
     IOMonitor::get().on_open(fd, path, flags, mode, java_context);
     LOGI("hook open: %s, fd:%d", path, fd);
+    LOGI("%s", stack.c_str());
     return fd;
 }
 
 ssize_t hook_read(int fd, void *buf, size_t count) {
-    LOGD("hook read, fd:%d, buffer count %zu", fd, count);
+    LOGI("hook read, fd:%d, buffer count %zu", fd, count);
     int64_t start = get_tick_count_micros();
     ssize_t ret = read(fd, buf, count);
     int64_t read_cost = get_tick_count_micros() - start;
@@ -60,7 +61,7 @@ ssize_t hook_read(int fd, void *buf, size_t count) {
 }
 
 ssize_t hook_write(int fd, const void *buf, size_t count) {
-    LOGD("hook write, fd: %d, buffer size %zu", fd, count);
+    LOGI("hook write, fd: %d, buffer size %zu", fd, count);
     int64_t start = get_tick_count_micros();
     ssize_t ret = write(fd, buf, count);
     int64_t write_cost = get_tick_count_micros() - start;
@@ -69,7 +70,7 @@ ssize_t hook_write(int fd, const void *buf, size_t count) {
 }
 
 int hook_close(int fd) {
-    LOGD("hook close, fd:%d", fd);
+    LOGI("hook close, fd:%d", fd);
     iomonitor::IOMonitor::get().on_close(fd);
     return close(fd);
 }
@@ -82,16 +83,8 @@ const static char *TARGET_MODULE_PATTERNS[] = {
 
 extern "C"
 JNIEXPORT jint JNICALL
-Java_com_cck_io_monitor_IOMonitor_nativeInit(JNIEnv *env, jclass clazz, jboolean debug,
-                                             jint main_thread_io_total_time_max,
-                                             jint main_thread_io_single_time_max,
-                                             jint buffer_min,
-                                             jint file_read_count_max,
-                                             jint file_write_count_max,
-                                             jint same_read_count_max) {
-
+Java_com_cck_io_monitor_IOMonitor_nativeInit(JNIEnv *env, jclass clazz, jboolean debug) {
     xhook_enable_debug(debug ? 1 : 0);
-
     int ret;
     for (auto target : TARGET_MODULE_PATTERNS) {
         ret = xhook_register(target, "open", (void *) hook_open, nullptr);

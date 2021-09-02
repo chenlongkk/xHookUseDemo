@@ -25,7 +25,7 @@ public class MainActivity extends AppCompatActivity {
     private Handler mHandle = new Handler(Looper.getMainLooper());
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        IOMonitor.install(new Config(true, 0,0,0,0,0,0));
+        IOMonitor.install(new Config(true));
         setContentView(R.layout.activity_main);
         findViewById(R.id.button).setOnClickListener(new View.OnClickListener() {
             @Override

@@ -13,6 +13,13 @@ android {
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles "consumer-rules.pro"
+
+        externalNativeBuild {
+            cmake {
+                // Passes optional arguments to CMake.
+                arguments "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     buildTypes {
