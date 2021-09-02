@@ -31,9 +31,8 @@ public class IOMonitor {
         StringBuilder sb = new StringBuilder();
         for (int i = elements.length - 1; i >= 0 ; i--) {
             StackTraceElement trace = elements[i];
-            if (trace.getClassName().contains("java.io.")
-                || trace.getClassName().contains("com.cck.io.monitor.")) {
-                continue;
+            if (trace.getClassName().contains("java.io.")){
+                break;
             }
             sb.insert(0, trace.toString() + "\n");
         }

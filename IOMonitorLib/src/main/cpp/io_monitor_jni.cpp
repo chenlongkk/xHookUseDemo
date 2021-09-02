@@ -19,8 +19,10 @@ namespace iomonitor {
     static jclass kJavaContextClass;
     static jmethodID kMethodIDGetJavaContext;
     static jfieldID kFieldIDStack;
-    static jfieldID  kFieldIDThreadId;
-    static jfieldID  kFieldIDThreadName;
+    static jfieldID kFieldIDThreadId;
+    static jfieldID kFieldIDThreadName;
+
+    static int (*original_android_fdsan_close_with_tag)(int fd, uint64_t ownerId);
 }
 
 int hook_open(const char *path, int flags, mode_t mode) {
@@ -31,7 +33,7 @@ int hook_open(const char *path, int flags, mode_t mode) {
     }
     int ret;
     JNIEnv *env;
-    if ((ret = kJavaVm->GetEnv((void**)&env, JNI_VERSION_1_6)) != JNI_OK) {
+    if ((ret = kJavaVm->GetEnv((void **) &env, JNI_VERSION_1_6)) != JNI_OK) {
         return fd;
     }
     jobject java_obj = env->CallStaticObjectMethod(kIOMonitorClass, kMethodIDGetJavaContext);
@@ -44,10 +46,10 @@ int hook_open(const char *path, int flags, mode_t mode) {
     std::string thread_name = std::string(strdup(j_thread_name_tmp));
     env->ReleaseStringUTFChars(j_thread_name, j_thread_name_tmp);
     jlong j_thread_id = env->GetLongField(java_obj, kFieldIDThreadId);
-    JavaContext java_context = JavaContext(stack, thread_name, (long)j_thread_id);
+    JavaContext java_context = JavaContext(stack, thread_name, (long) j_thread_id);
     IOMonitor::get().on_open(fd, path, flags, mode, java_context);
     LOGI("hook open: %s, fd:%d", path, fd);
-    LOGI("%s", stack.c_str());
+//    LOGI("%s", stack.c_str());
     return fd;
 }
 
@@ -75,10 +77,18 @@ int hook_close(int fd) {
     return close(fd);
 }
 
+int hook_android_fdsan_close_with_tag(int fd, uint64_t ownerId) {
+    LOGI("hook hook_android_fdsan_close_with_tag, fd:%d", fd);
+    int ret = iomonitor::original_android_fdsan_close_with_tag(fd, ownerId);
+    iomonitor::IOMonitor::get().on_close(fd);
+    return ret;
+}
+
 const static char *TARGET_MODULE_PATTERNS[] = {
         ".*/libopenjdkjvm.so$",
         ".*/libjavacore.so$",
-        ".*/libopenjdk.so$"
+        ".*/libopenjdk.so$",
+        ".*/libandroidio.so$"
 };
 
 extern "C"
@@ -97,6 +107,7 @@ Java_com_cck_io_monitor_IOMonitor_nativeInit(JNIEnv *env, jclass clazz, jboolean
             LOGI("register open64 fail, pattern: %s, err: %d", target, ret);
             return ret;
         }
+        //todo 解决android 10以上的io监控的问题
         bool is_java_core_lib = strstr(target, ".*/libjavacore.so$") != nullptr;
         if (is_java_core_lib) {
             ret = xhook_register(target, "read", (void *) hook_read, nullptr);
@@ -109,11 +120,20 @@ Java_com_cck_io_monitor_IOMonitor_nativeInit(JNIEnv *env, jclass clazz, jboolean
                 LOGI("register write fail, pattern: %s err: %d", target, ret);
                 return ret;
             }
-            ret = xhook_register(target, "close", (void *) hook_close, nullptr);
-            if (ret < 0) {
-                LOGI("register close fail, pattern: %s, err: %d", target, ret);
-                return ret;
-            }
+
+
+        }
+        ret = xhook_register(target, "close", (void *) hook_close, nullptr);
+        if (ret < 0) {
+            LOGI("register close fail, pattern: %s, err: %d", target, ret);
+            return ret;
+        }
+        ret = xhook_register(target, "android_fdsan_close_with_tag",
+                             (void *) hook_android_fdsan_close_with_tag,
+                             (void **) &iomonitor::original_android_fdsan_close_with_tag);
+        if (ret < 0) {
+            LOGI("register android_fdsan_close_with_tag fail, pattern: %s, err: %d", target, ret);
+            return ret;
         }
     }
 
@@ -137,9 +157,13 @@ Java_com_cck_io_monitor_IOMonitor_nativeInit(JNIEnv *env, jclass clazz, jboolean
         return JNI_ERR;
     }
     iomonitor::kJavaContextClass = reinterpret_cast<jclass>(env->NewGlobalRef(tmp_class));
-    iomonitor::kFieldIDStack = env->GetFieldID(iomonitor::kJavaContextClass, "stack", "Ljava/lang/String;");
-    iomonitor::kFieldIDThreadName = env->GetFieldID(iomonitor::kJavaContextClass, "threadName", "Ljava/lang/String;");
+    iomonitor::kFieldIDStack = env->GetFieldID(iomonitor::kJavaContextClass, "stack",
+                                               "Ljava/lang/String;");
+    iomonitor::kFieldIDThreadName = env->GetFieldID(iomonitor::kJavaContextClass, "threadName",
+                                                    "Ljava/lang/String;");
     iomonitor::kFieldIDThreadId = env->GetFieldID(iomonitor::kJavaContextClass, "threadId", "J");
-    iomonitor::kMethodIDGetJavaContext = env->GetStaticMethodID(iomonitor::kIOMonitorClass, "createJavaContext", "()Lcom/cck/io/monitor/JavaContext;");
+    iomonitor::kMethodIDGetJavaContext = env->GetStaticMethodID(iomonitor::kIOMonitorClass,
+                                                                "createJavaContext",
+                                                                "()Lcom/cck/io/monitor/JavaContext;");
     return ret;
 }
